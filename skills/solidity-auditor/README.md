@@ -1,3 +1,12 @@
+> **Third-party skill — not authored by this project.**
+>
+> Created by the [Pashov Audit Group](https://github.com/pashov) and vendored
+> here from [pashov/skills](https://github.com/pashov/skills/tree/main/solidity-auditor)
+> at commit [`c577eb7`](https://github.com/pashov/skills/commit/c577eb7799c349de0acb187ba00ca98e14e436fd),
+> under the MIT licence ([`LICENSE`](./LICENSE)). The content below is upstream's,
+> unmodified. See [`ATTRIBUTION.md`](./ATTRIBUTION.md) for provenance and how to
+> update it.
+
 # Solidity Auditor
 
 A security agent with a simple mission - findings in minutes, not weeks.
@@ -14,7 +23,7 @@ Not a substitute for a formal audit - but the check you should never skip.
 
 _Portrayed below: finding multiple high-confidence vulnerabilities in a codebase_
 
-![Running solidity-auditor in terminal](../static/skill_pag.gif)
+![Running solidity-auditor in terminal](https://raw.githubusercontent.com/pashov/skills/main/static/skill_pag.gif)
 
 ## Usage
 
