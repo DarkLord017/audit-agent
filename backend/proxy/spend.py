@@ -93,6 +93,8 @@ class SpendTracker:
         reserved: Decimal,
         input_tokens: int,
         output_tokens: int,
+        cache_write_tokens: int = 0,
+        cache_read_tokens: int = 0,
     ) -> None:
         """Replace the reservation with what it actually cost."""
         try:
@@ -101,7 +103,12 @@ class SpendTracker:
             log.error("settling job %s against unpriced model %s", job_id, model)
             return
 
-        actual = spec.cost(input_tokens, output_tokens)
+        actual = spec.cost(
+            input_tokens, output_tokens, cache_write_tokens, cache_read_tokens
+        )
+        # Cached input is real input as far as the token counters go, or
+        # the row would claim a job read almost nothing.
+        input_tokens = input_tokens + cache_write_tokens + cache_read_tokens
         query = """
         UPDATE jobs
            SET input_tokens  = input_tokens  + %s,

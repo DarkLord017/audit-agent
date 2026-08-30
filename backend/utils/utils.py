@@ -44,13 +44,6 @@ class Vulnerability(BaseModel):
     end_line: int | None = Field(default=None, ge=1)
     impact: str | None = Field(default=None, max_length=5_000)
     recommendation: str | None = Field(default=None, max_length=5_000)
-
-    # --- proof, filled in by the breaker role ------------------------
-    #
-    # verified is the whole point of the second stage: it is True only
-    # when a Foundry test actually ran and demonstrated the bug. An
-    # unverified finding is still kept -- a real bug nobody could write
-    # a test for is worth seeing -- it just carries no proof.
     poc: str | None = Field(default=None, max_length=20_000)
     verified: bool = False
     verification: str | None = Field(default=None, max_length=5_000)
@@ -120,4 +113,4 @@ class Job:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: Decimal = field(default_factory=lambda: Decimal(0))
-    budget_usd: Decimal = field(default_factory=lambda: Decimal("15.0"))
+    budget_usd: Decimal = field(default_factory=lambda: Decimal("50.0"))

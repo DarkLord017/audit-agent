@@ -6,6 +6,11 @@ export PWD := $(shell pwd)
 COMPOSE := docker compose
 API     := http://localhost:1337
 
+# The worker must be amd64. solc-select ships linux-amd64 binaries only,
+# so an arm64 worker image builds fine and then cannot run the compiler.
+# Must match WORKER_PLATFORM in backend/instancer/docker_backend.py.
+PLATFORM := linux/amd64
+
 .PHONY: help
 help:  ## show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -33,12 +38,12 @@ env:  ## create .env from the template
 build: build-base build-worker build-backend  ## build every image
 
 .PHONY: build-base
-build-base:  ## neutral base (python, node, claude-code)
-	docker build -t evmbench/base:latest -f backend/docker/base/Dockerfile .
+build-base:  ## neutral base, amd64 (python, node, claude-code)
+	docker build --platform $(PLATFORM) -t evmbench/base:latest -f backend/docker/base/Dockerfile .
 
 .PHONY: build-worker
 build-worker:  ## solidity worker (foundry, slither, solc, forge-std)
-	docker build -t evmbench/worker-solidity:latest -f backend/docker/worker-solidity/Dockerfile .
+	docker build --platform $(PLATFORM) -t evmbench/worker-solidity:latest -f backend/docker/worker-solidity/Dockerfile .
 
 .PHONY: build-backend
 build-backend:  ## api / proxy / instancer
@@ -48,7 +53,7 @@ build-backend:  ## api / proxy / instancer
 
 .PHONY: up
 up:  ## start everything
-	@mkdir -p uploads
+	@mkdir -p uploads outputs
 	$(COMPOSE) up -d
 	@echo "api on $(API)  ·  rabbit ui on http://localhost:15672"
 

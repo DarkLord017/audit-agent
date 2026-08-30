@@ -29,6 +29,7 @@ from backend.broker.messages import JobMessage
 from backend.database.db import DatabaseOperations
 from backend.instancer.docker_backend import DockerWorkerBackend
 from backend.utils.utils import JobStatus, Report
+from backend.worker_runner.profiles import registry
 
 log = logging.getLogger(__name__)
 
@@ -159,12 +160,22 @@ class Instancer:
         # A message is a nudge saying "go look"; the database is the
         # truth. Trusting message.upload_path would let anyone who can
         # publish to the queue mount any host path into the container.
+        # The image comes from the registry too, keyed by profile. A queue
+        # publisher does not get to choose which image we run.
+        try:
+            image = registry.get(message.profile).toolchain.image
+        except KeyError:
+            log.error("job %s names unknown profile %s", job.id, message.profile)
+            self.db_ops.job_failed(job.id, f"unknown profile: {message.profile}")
+            return
+
         container_id = self.backend.start_worker(
             job_id=job.id,
             upload_path=job.upload_path,
             model=job.model,
             profile=message.profile,
             proxy_token=message.proxy_token,
+            image=image,
         )
         self.db_ops.job_started(job.id, container_id)
 

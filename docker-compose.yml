@@ -62,6 +62,9 @@ services:
     environment:
       DATABASE_URL: postgresql://evmbench:${POSTGRES_PASSWORD:-evmbench}@postgres:5432/evmbench
       PROXY_SECRET_KEY: ${PROXY_SECRET_KEY:?run 'make secret' and put it in .env}
+      # Only needed for an identity-linked key, which the API refuses
+      # unless the request names a workspace. Blank is fine otherwise.
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
     depends_on:
       postgres: {condition: service_healthy}
     # The only service on all three: it talks to Postgres, it is the sole
@@ -80,9 +83,19 @@ services:
       WORKER_IMAGE_SOLIDITY: ${WORKER_IMAGE_SOLIDITY:-evmbench/worker-solidity:latest}
       INSTANCER_CONCURRENCY: ${INSTANCER_CONCURRENCY:-3}
       JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-10800}
+      WORKER_MEMORY: ${WORKER_MEMORY:-4g}
+      WORKER_CPUS: ${WORKER_CPUS:-3}
+      # Same host-path rule as UPLOAD_DIR. The instancer creates this
+      # directory and chowns it to the worker uid, then hands the path to
+      # the Docker daemon as a bind source -- which the daemon resolves on
+      # the host. If the two differ the daemon silently creates a
+      # root-owned directory instead and the worker cannot write its
+      # report into it.
+      OUTPUT_DIR: ${PWD}/outputs
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${PWD}/uploads:${PWD}/uploads
+      - ${PWD}/outputs:${PWD}/outputs
     depends_on:
       postgres: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}

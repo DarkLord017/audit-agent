@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -37,7 +38,20 @@ class ProxyAPI:
     DROP_HEADERS = {
         "authorization", "x-api-key", "host", "content-length",
         "connection", "keep-alive", "transfer-encoding",
+        # We hand the worker a decoded body, so asking upstream to
+        # compress only creates a body whose encoding we then have to
+        # re-declare. Simpler to ask for none.
+        "accept-encoding",
+        # Attached here from configuration, never taken from the worker.
+        "anthropic-workspace-id",
     }
+
+    # Identity-linked keys are scoped to a workspace and the API refuses a
+    # request that does not name one:
+    #   400 anthropic-workspace-id is required when authenticating with an
+    #   identity-linked API key
+    # Blank for an ordinary key, which needs no such header.
+    WORKSPACE_ID = os.getenv("ANTHROPIC_WORKSPACE_ID", "").strip()
 
     def __init__(self, vault: TokenVault | None = None, spend: SpendTracker | None = None):
         self.vault = vault or TokenVault()
@@ -49,10 +63,25 @@ class ProxyAPI:
     # --- checks, all run before we spend anything ---------------------
 
     def read_token(self, request: Request) -> str:
+        """Pull the job token off the request.
+
+        The Anthropic SDK -- and so the Claude Code CLI the worker runs --
+        sends its key as `x-api-key`, not as a bearer token. Reading only
+        `authorization` meant every worker request was rejected 401 before
+        it reached the vault. Bearer is still accepted for anything that
+        speaks that dialect.
+        """
+        api_key = (request.headers.get("x-api-key") or "").strip()
+        if api_key:
+            return api_key
+
         header = request.headers.get("authorization") or ""
-        if not header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="missing bearer token")
-        return header.removeprefix("Bearer ").strip()
+        if header.startswith("Bearer "):
+            return header.removeprefix("Bearer ").strip()
+
+        raise HTTPException(
+            status_code=401, detail="missing x-api-key or bearer token"
+        )
 
     def check_path(self, path: str) -> None:
         if path.strip("/") not in self.ALLOWED_PATHS:
@@ -107,7 +136,10 @@ class ProxyAPI:
             if k.lower() not in self.DROP_HEADERS
         }
         headers["x-api-key"] = real_key          # <- the swap
+        if self.WORKSPACE_ID:
+            headers["anthropic-workspace-id"] = self.WORKSPACE_ID
         headers.setdefault("anthropic-version", "2023-06-01")
+        headers["accept-encoding"] = "identity"
 
         upstream = self.client.build_request(
             "POST", f"{self.UPSTREAM}/v1/{path.strip('/')}", headers=headers, content=body,
@@ -131,7 +163,13 @@ class ProxyAPI:
     async def _relay_and_bill(self, resp, job_id: str, model: str, reserved):
         chunks: list[bytes] = []
         try:
-            async for chunk in resp.aiter_raw():
+            # Decoded, not raw. aiter_raw yields the bytes exactly as
+            # upstream sent them -- gzip included -- while the response we
+            # build never re-declares content-encoding. The worker would
+            # get compressed bytes labelled as JSON and fail to parse
+            # them, and _settle would fail to find usage in them and keep
+            # the pessimistic reservation.
+            async for chunk in resp.aiter_bytes():
                 chunks.append(chunk)
                 yield chunk
         finally:
@@ -153,26 +191,38 @@ class ProxyAPI:
         if usage is None:
             log.warning("no usage in reply for job %s; keeping the reservation", job_id)
             return
-        self.spend.settle(job_id, model, reserved, usage[0], usage[1])
+        self.spend.settle(job_id, model, reserved, *usage)
 
     @staticmethod
-    def _read_usage(body: bytes) -> tuple[int, int] | None:
-        """Pull (input_tokens, output_tokens) out of a reply.
+    def _read_usage(body: bytes) -> tuple[int, int, int, int] | None:
+        """Pull (input, output, cache_write, cache_read) out of a reply.
 
         Non-streaming replies carry `usage` at the top level. Streaming
         replies send it across two events: message_start has the input
-        count, and the final message_delta has the output count.
+        counts, and the final message_delta has the output count.
+
+        The cache counters matter as much as input_tokens: Claude Code
+        caches its system prompt, so a warm request reports input_tokens
+        in the tens while reading tens of thousands from cache.
         """
+        def counts(u: dict) -> tuple[int, int, int]:
+            return (
+                int(u.get("input_tokens", 0) or 0),
+                int(u.get("cache_creation_input_tokens", 0) or 0),
+                int(u.get("cache_read_input_tokens", 0) or 0),
+            )
+
         text = body.decode("utf-8", errors="replace")
 
         if not text.lstrip().startswith("event:") and "data:" not in text:
             try:
                 usage = json.loads(text).get("usage") or {}
-                return int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
+                inp, cw, cr = counts(usage)
+                return inp, int(usage.get("output_tokens", 0) or 0), cw, cr
             except (ValueError, AttributeError, TypeError):
                 return None
 
-        inp = out = 0
+        inp = out = cw = cr = 0
         for line in text.splitlines():
             if not line.startswith("data:"):
                 continue
@@ -181,11 +231,10 @@ class ProxyAPI:
             except ValueError:
                 continue
             if event.get("type") == "message_start":
-                usage = event.get("message", {}).get("usage", {})
-                inp = int(usage.get("input_tokens", 0))
+                inp, cw, cr = counts(event.get("message", {}).get("usage", {}))
             elif event.get("type") == "message_delta":
-                out = int(event.get("usage", {}).get("output_tokens", out))
-        return (inp, out) if (inp or out) else None
+                out = int(event.get("usage", {}).get("output_tokens", out) or out)
+        return (inp, out, cw, cr) if (inp or out or cw or cr) else None
 
     async def aclose(self) -> None:
         await self.client.aclose()

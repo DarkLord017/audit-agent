@@ -25,8 +25,14 @@ class DockerWorkerBackend:
     ISOLATED_NETWORK = "evmbench_isolated"
     EGRESS_NETWORK = "evmbench_egress"
 
-    MEMORY = "1g"
-    NANO_CPUS = int(1_000_000_000 * 0.5)   # half a core
+    # The auditor skill fans out to twelve subagents, each a Claude Code
+    # process. A gigabyte and half a core killed the run with SIGKILL
+    # (exit -9) partway through the first stage, so the ceilings are
+    # higher and tunable per deployment. They are still ceilings: a
+    # runaway job is capped, it just is not capped below what the normal
+    # workload needs.
+    MEMORY = os.getenv("WORKER_MEMORY", "4g")
+    NANO_CPUS = int(1_000_000_000 * float(os.getenv("WORKER_CPUS", "3")))
     PIDS_LIMIT = 1024
     TIMEOUT_SECONDS = 3 * 60 * 60
     # Paths inside the container. Root is read-only, so /work is the
@@ -38,10 +44,13 @@ class DockerWorkerBackend:
     OUT_MOUNT = "/out"
     REPORT_PATH = "/out/report.json"
 
-    # Must match the user created in docker/worker/Dockerfile.
+    # Must match the user created in docker/worker-solidity/Dockerfile.
     UID = 10001
     GID = 10001
     
+    # solc-select ships linux-amd64 binaries only. An arm64 worker image
+    # builds cleanly and then cannot run the compiler at all, so the
+    # images are built for this platform too -- see PLATFORM in the Makefile.
     PLATFORM = os.getenv("WORKER_PLATFORM", "linux/amd64")
     MAX_REPORT_BYTES = 5 * 1024 * 1024
 

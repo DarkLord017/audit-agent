@@ -17,9 +17,32 @@ class ModelSpec:
     input_per_mtok: Decimal    # USD per million input tokens
     output_per_mtok: Decimal   # USD per million output tokens
 
-    def cost(self, input_tokens: int, output_tokens: int) -> Decimal:
+    # Cached input is not free. A cache write costs more than fresh input
+    # and a read costs a fraction of it, both priced off the input rate.
+    CACHE_WRITE_MULTIPLIER = Decimal("1.25")
+    CACHE_READ_MULTIPLIER = Decimal("0.10")
+
+    def cost(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_write_tokens: int = 0,
+        cache_read_tokens: int = 0,
+    ) -> Decimal:
+        """What a call costs, cached input included.
+
+        Claude Code caches its system prompt and tool definitions, so on a
+        warm request almost every input token arrives as a cache read and
+        `input_tokens` alone reads as a handful. Billing on that number
+        alone undercounts the real spend by orders of magnitude.
+        """
+        billable_input = (
+            Decimal(input_tokens)
+            + Decimal(cache_write_tokens) * self.CACHE_WRITE_MULTIPLIER
+            + Decimal(cache_read_tokens) * self.CACHE_READ_MULTIPLIER
+        )
         return (
-            Decimal(input_tokens) * self.input_per_mtok
+            billable_input * self.input_per_mtok
             + Decimal(output_tokens) * self.output_per_mtok
         ) / Decimal(1_000_000)
 
