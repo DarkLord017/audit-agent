@@ -20,7 +20,6 @@ import json
 import logging
 import os
 import re
-from pathlib import Path
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -36,11 +35,26 @@ from backend.worker_runner.workspace import Workspace
 
 log = logging.getLogger(__name__)
 
+# Reports are handed between stages in memory, never read back off disk.
+# A copy is still written to reports/ for humans, but the code under review
+# runs during `forge test` and can overwrite anything in the workspace --
+# including that copy. If a stage read its input from a file, an upload
+# could blank out the findings against it and score itself clean.
+MAX_HANDOFF_CHARS = 200_000
+
 HANDOFF_PROMPT = """\
 {command} {source}
 
-The previous stage wrote its report to `{previous}`. Read that file first
-and work from it. Your job is the next stage, not a repeat of the last one.
+Below is the previous stage's report, handed to you directly. Work from it.
+Your job is the next stage, not a repeat of the last one.
+
+A copy sits at `{path}` for humans to read. Do not load it from there: the
+code under review can rewrite that file. The text below is the copy that
+counts.
+
+--- previous report ---
+{report}
+--- end previous report ---
 """
 
 CONVERT_PROMPT = """\
@@ -115,7 +129,7 @@ class AuditRunner:
 
     async def run_roles(self) -> str:
         """Run every role in order. Returns the last one's markdown."""
-        previous: Path | None = None
+        previous: str | None = None
         markdown = ""
 
         for role in self.profile.roles:
@@ -124,27 +138,37 @@ class AuditRunner:
             if not markdown.strip():
                 raise AuditFailed(f"the {role.key} stage produced no report")
 
+            # Written for humans only. The next stage gets the string.
             path = self.workspace.report_path(role.key)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(markdown)
             log.info("stage %s wrote %s (%d chars)", role.key, path, len(markdown))
-            previous = path
+            previous = markdown
 
         return markdown
 
-    async def run_role(self, role: Role, previous: Path | None) -> str:
-        """Run one stage. Later stages are handed the previous report."""
+    async def run_role(self, role: Role, previous: str | None) -> str:
+        """Run one stage. Later stages are handed the previous report text."""
         if previous is None:
             prompt = f"{role.command} {self.workspace.SOURCE_SUBDIR}"
         else:
-            # Handed as a path, not pasted in: reports get long, and the
-            # stage may want to re-read it while it works.
             prompt = HANDOFF_PROMPT.format(
                 command=role.command,
                 source=self.workspace.SOURCE_SUBDIR,
-                previous=previous.relative_to(self.workspace.root),
+                path=self.workspace.report_path(role.key).relative_to(
+                    self.workspace.root
+                ),
+                report=self._trim(previous),
             )
         return await self._collect(prompt, self.options(role))
+
+    @staticmethod
+    def _trim(report: str) -> str:
+        """Keep a runaway report from blowing up the next stage's prompt."""
+        if len(report) <= MAX_HANDOFF_CHARS:
+            return report
+        log.warning("report is %d chars, trimming to %d", len(report), MAX_HANDOFF_CHARS)
+        return report[:MAX_HANDOFF_CHARS] + "\n\n[report truncated]"
 
     async def to_report(self, markdown: str) -> Report:
         """Final pass: markdown in, validated Report out."""
