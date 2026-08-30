@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     input_tokens  BIGINT NOT NULL DEFAULT 0,
     output_tokens BIGINT NOT NULL DEFAULT 0,
     cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
-    budget_usd    NUMERIC(12,6) NOT NULL DEFAULT 5.0
+    budget_usd    NUMERIC(12,6) NOT NULL DEFAULT 15.0
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at DESC);

@@ -120,4 +120,4 @@ class Job:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: Decimal = field(default_factory=lambda: Decimal(0))
-    budget_usd: Decimal = field(default_factory=lambda: Decimal("5.0"))
+    budget_usd: Decimal = field(default_factory=lambda: Decimal("15.0"))
