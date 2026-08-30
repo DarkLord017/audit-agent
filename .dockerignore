@@ -1,0 +1,19 @@
+# The build context is the repository root (see docker-compose.yml), so
+# this is the file Docker reads -- backend/.dockerignore is not consulted.
+.git/
+.venv/
+backend/.venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+backend/.ruff_cache/
+
+# Untrusted uploads and generated fixtures never belong in an image.
+uploads/
+fixtures/
+outputs/
+
+.env
+.env.*
+!.env.example

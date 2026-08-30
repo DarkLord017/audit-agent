@@ -1,0 +1,101 @@
+
+name: evmbench
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evmbench
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evmbench}
+      POSTGRES_DB: evmbench
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/database/table.sql:/docker-entrypoint-initdb.d/01-table.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evmbench -d evmbench"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [backplane]
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-evmbench}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-evmbench}
+    ports:
+      - "15672:15672"      # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backplane]
+
+  api:
+    image: evmbench/backend:latest
+    build:
+      context: .
+      dockerfile: backend/docker/backend/Dockerfile
+    command: uvicorn backend.api.main:app --host 0.0.0.0 --port 1337
+    environment:
+      DATABASE_URL: postgresql://evmbench:${POSTGRES_PASSWORD:-evmbench}@postgres:5432/evmbench
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-evmbench}:${RABBITMQ_PASSWORD:-evmbench}@rabbitmq:5672/%2F
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      PROXY_SECRET_KEY: ${PROXY_SECRET_KEY:?run 'make secret' and put it in .env}
+      UPLOAD_DIR: ${PWD}/uploads
+    volumes:
+      - ${PWD}/uploads:${PWD}/uploads
+    ports:
+      - "1337:1337"
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    networks: [backplane]
+
+  proxy:
+    # The worker reaches this by name. docker_backend.py hardcodes
+    # http://evmbench-proxy:8084, so the container name is load-bearing.
+    container_name: evmbench-proxy
+    image: evmbench/backend:latest
+    command: uvicorn backend.proxy.main:app --host 0.0.0.0 --port 8084
+    environment:
+      DATABASE_URL: postgresql://evmbench:${POSTGRES_PASSWORD:-evmbench}@postgres:5432/evmbench
+      PROXY_SECRET_KEY: ${PROXY_SECRET_KEY:?run 'make secret' and put it in .env}
+    depends_on:
+      postgres: {condition: service_healthy}
+    # The only service on all three: it talks to Postgres, it is the sole
+    # thing the isolated workers can reach, and it is the sole route out.
+    networks: [backplane, isolated, egress]
+
+  instancer:
+    image: evmbench/backend:latest
+    command: python -m backend.instancer.consumer
+    # Root because it drives the Docker socket. It starts the sandboxes;
+    # it is not itself the sandbox.
+    user: root
+    environment:
+      DATABASE_URL: postgresql://evmbench:${POSTGRES_PASSWORD:-evmbench}@postgres:5432/evmbench
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-evmbench}:${RABBITMQ_PASSWORD:-evmbench}@rabbitmq:5672/%2F
+      WORKER_IMAGE_SOLIDITY: ${WORKER_IMAGE_SOLIDITY:-evmbench/worker-solidity:latest}
+      INSTANCER_CONCURRENCY: ${INSTANCER_CONCURRENCY:-3}
+      JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-10800}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}/uploads:${PWD}/uploads
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    networks: [backplane]
+
+volumes:
+  pgdata:
+
+networks:
+  backplane:
+    name: evmbench_backplane
+  isolated:
+    name: evmbench_isolated
+    internal: true          
+  egress:
+    name: evmbench_egress
