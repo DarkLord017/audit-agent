@@ -105,20 +105,30 @@ class Workspace:
             log.info("installed skill %s into %s", skill, dest)
         return installed
 
-    def scaffold_poc(self) -> Path:
-        """Lay out a Foundry project the breaker can write tests in.
+    def has_foundry_project(self) -> bool:
+        """Did they ship a Foundry project of their own?"""
+        return any(self.source_dir.rglob("foundry.toml"))
 
-        Deliberately *our* project, not the uploader's. Their foundry.toml
-        could set `ffi = true`, which lets a Solidity test shell out and
-        rewrite its own result -- harmless to the host inside this
-        container, but it would let submitted code fake a passing proof.
-        Here ffi stays off and the config is ours.
+    def scaffold_poc(self) -> Path | None:
+        """Lay out a bare Foundry project -- only if they shipped none.
+
+        A real repo brings its own foundry.toml: remappings, lib/, solc
+        version, optimizer settings. Ours would not compile their code, so
+        theirs is used untouched and this is a fallback for uploads that
+        are only loose .sol files.
+
+        Nothing here is a security control. The container holds no secret
+        worth taking -- see the briefing -- so `ffi` is not fenced off. It
+        is left off here purely because a bare project has no need of it.
         """
+        if self.has_foundry_project():
+            log.info("upload ships its own foundry.toml; not scaffolding")
+            return None
+
         self.poc_dir.mkdir(parents=True, exist_ok=True)
         (self.poc_dir / "test").mkdir(exist_ok=True)
         (self.poc_dir / "src").mkdir(exist_ok=True)
 
-        # forge-std where forge expects to find it, without a network.
         lib = self.poc_dir / "lib"
         lib.mkdir(exist_ok=True)
         link = lib / "forge-std"
@@ -126,32 +136,21 @@ class Workspace:
             link.symlink_to(FORGE_STD, target_is_directory=True)
 
         (self.poc_dir / "foundry.toml").write_text(f"""\
-# The breaker's own project. Not the uploader's -- see scaffold_poc().
+# Fallback project, written only because the upload shipped no
+# foundry.toml of its own. If it had, that one would be used as-is.
 [profile.default]
 src = "src"
 test = "test"
 out = "out"
 libs = ["lib"]
 
-# Pinned, and offline. Left to itself forge downloads a compiler from
-# binaries.soliditylang.org, which cannot be reached from this container.
-solc = "{SOLC_BIN}"
-offline = true
-
-# Off on purpose: the code under test is untrusted, and a test that can
-# run shell commands could rewrite its own verdict.
-ffi = false
-
-# The contracts under review live outside this project, so forge needs
-# permission to read them.
 allow_paths = ["../{self.SOURCE_SUBDIR}"]
-
 remappings = [
     "forge-std/={FORGE_STD}/src/",
     "{self.SOURCE_SUBDIR}/=../{self.SOURCE_SUBDIR}/",
 ]
 """)
-        log.info("scaffolded PoC project at %s", self.poc_dir)
+        log.info("scaffolded fallback PoC project at %s", self.poc_dir)
         return self.poc_dir
 
     def write_briefing(self) -> Path:
@@ -187,25 +186,34 @@ This audit runs in stages. Each stage reads the stage before it.
 
 ## Layout
 
-- `{self.SOURCE_SUBDIR}/` -- the code under review, untrusted, read-only in spirit
-- `{self.POC_SUBDIR}/` -- a ready Foundry project for writing proof-of-concept tests
+- `{self.SOURCE_SUBDIR}/` -- the code under review, untrusted
+- `{self.POC_SUBDIR}/` -- a bare Foundry project, present only if they shipped none
 - `{self.REPORTS_SUBDIR}/` -- one markdown report per stage
 
-## Proving a bug
+## Compiling and testing
 
-`{self.POC_SUBDIR}/` is already set up: `forge-std` is linked, remappings are
-written, and the contracts under review are reachable as
-`{self.SOURCE_SUBDIR}/Whatever.sol`. Write tests in `{self.POC_SUBDIR}/test/` and run
-them with `cd {self.POC_SUBDIR} && forge test`.
+If the upload has its own `foundry.toml`, **use it**. It carries their
+remappings, `lib/`, solc version and optimizer settings, and nothing else
+will compile their code. Work inside their project and add your tests to
+its test directory.
 
-Use this project, not any `foundry.toml` shipped inside `{self.SOURCE_SUBDIR}/`.
-Theirs may enable `ffi`, which would let the code under test run shell
-commands and fake its own result.
+There is no network, so two flags are needed on every forge command:
 
-A finding is **verified** only when a test you wrote fails against the
-buggy code for the reason you claim. If you cannot get a test to pass,
-say so plainly and leave the finding unverified -- a wrong proof is
-worse than none.
+```
+forge test --offline --use {SOLC_BIN} -vv
+```
+
+`--offline` stops forge reaching for a compiler list, and `--use` points it
+at the solc already in this image. Both are command-line flags, so they
+override the project config without editing a single file of theirs.
+
+If the upload has no `foundry.toml`, use `{self.POC_SUBDIR}/`, where
+`forge-std` is linked and the contracts are reachable as
+`{self.SOURCE_SUBDIR}/Whatever.sol`.
+
+A finding is **verified** only when a test you wrote actually ran and
+demonstrated the bug. If you cannot get one to run, say so plainly and
+leave the finding unverified -- a wrong proof is worse than none.
 
 ## Tools on PATH
 
