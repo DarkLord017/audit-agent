@@ -13,6 +13,14 @@ agent's workspace for each job.
 | Skill | Author | Licence | Upstream |
 |---|---|---|---|
 | [`solidity-auditor`](./solidity-auditor) | [Pashov Audit Group](https://github.com/pashov) — **third party** | MIT | [pashov/skills](https://github.com/pashov/skills/tree/main/solidity-auditor) |
+| [`bug-breaker`](./bug-breaker) | this project, except `references/triage.md` | mixed — see note | [trailofbits/skills](https://github.com/trailofbits/skills) (triage only) |
+
+> **Note on `bug-breaker`:** it is original work apart from
+> `references/triage.md`, which adapts Trail of Bits' vulnerability-triage
+> brocards. Those are **CC-BY-SA-4.0**, and ShareAlike is copyleft, so that
+> one file carries CC-BY-SA-4.0 too. The obligation covers the adapted file,
+> not the rest of the repository. See
+> [`bug-breaker/ATTRIBUTION.md`](./bug-breaker/ATTRIBUTION.md).
 
 ## Vendoring policy
 

@@ -1,6 +1,4 @@
 # The solidity worker: neutral base plus Foundry, Slither and solc.
-# Another ecosystem gets its own image from the same base -- so adding
-# Rust never bloats the image a Solidity job has to pull.
 FROM evmbench/base:latest
 
 RUN FOUNDRY_DIR=/opt/foundry sh -c 'curl -L https://foundry.paradigm.xyz | bash' \
