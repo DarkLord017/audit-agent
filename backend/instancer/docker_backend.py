@@ -85,6 +85,7 @@ class DockerWorkerBackend:
         model: str,
         profile: str,
         proxy_token: str,
+        image: str | None = None,
     ) -> str:
         """Launch the container for one job. Returns its id."""
         self.ensure_networks()
@@ -94,8 +95,10 @@ class DockerWorkerBackend:
         out_dir.chmod(0o770)
         os.chown(out_dir, self.UID, self.GID) if hasattr(os, "chown") else None
 
+        # Each ecosystem ships its own image: solidity carries Foundry and
+        # Slither, another would carry cargo. self.image is only a fallback.
         container = self.client.containers.run(
-            self.image,
+            image or self.image,
             detach=True,
             platform=self.PLATFORM,
             name=f"evmbench-worker-{job_id}",
@@ -154,7 +157,10 @@ class DockerWorkerBackend:
             restart_policy={"Name": "no"},          # dies once, stays dead
             labels={"io.evmbench.job_id": job_id},
         )
-        log.info("started worker %s for job %s", container.short_id, job_id)
+        log.info(
+            "started worker %s for job %s on %s",
+            container.short_id, job_id, image or self.image,
+        )
         return container.id
 
     def wait(self, container_id: str, timeout: int) -> int:

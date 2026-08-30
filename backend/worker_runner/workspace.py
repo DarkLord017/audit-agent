@@ -27,15 +27,6 @@ log = logging.getLogger(__name__)
 # Where the vendored skills live in the repo / image.
 SKILLS_SOURCE = Path(os.getenv("SKILLS_DIR", Path(__file__).parents[2] / "skills"))
 
-# forge-std, baked into the base image. The worker has no network, so
-# `forge init` cannot clone it -- see docker/base/Dockerfile.
-FORGE_STD = Path(os.getenv("FORGE_STD_DIR", "/opt/forge-std"))
-
-# Foundry ships its own solc downloader and ignores the one on PATH. With
-# no network that fails with a DNS error, so the compiler is pinned to the
-# binary solc-select already installed at build time.
-SOLC_BIN = os.getenv("SOLC_BIN", "/opt/solc/.solc-select/artifacts/solc-0.8.28/solc-0.8.28")
-
 
 class SkillNotVendored(Exception):
     """A role names a skill that is not in skills/."""
@@ -83,7 +74,7 @@ class Workspace:
         self.source_dir.mkdir(parents=True, exist_ok=True)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.install_skills()
-        self.scaffold_poc()
+        self.scaffold()
         self.write_briefing()
         return self.root
 
@@ -105,52 +96,59 @@ class Workspace:
             log.info("installed skill %s into %s", skill, dest)
         return installed
 
-    def has_foundry_project(self) -> bool:
-        """Did they ship a Foundry project of their own?"""
-        return any(self.source_dir.rglob("foundry.toml"))
+    def _expand(self, text: str) -> str:
+        """Fill the workspace directory names into a toolchain string."""
+        return (
+            text.replace("{source}", self.SOURCE_SUBDIR)
+            .replace("{poc}", self.POC_SUBDIR)
+            .replace("{reports}", self.REPORTS_SUBDIR)
+        )
 
-    def scaffold_poc(self) -> Path | None:
-        """Lay out a bare Foundry project -- only if they shipped none.
+    def brings_own_project(self) -> bool:
+        """Did the upload ship a project of its own?
 
-        A real repo brings its own foundry.toml: remappings, lib/, solc
-        version, optimizer settings. Ours would not compile their code, so
-        theirs is used untouched and this is a fallback for uploads that
-        are only loose .sol files.
-
-        Nothing here is a security control. The container holds no secret
-        worth taking -- see the briefing -- so `ffi` is not fenced off. It
-        is left off here purely because a bare project has no need of it.
+        A real repo carries its own build config -- foundry.toml, Cargo.toml,
+        whatever the ecosystem uses. Ours would not compile their code, so
+        when one is present it is left alone and nothing is scaffolded.
         """
-        if self.has_foundry_project():
-            log.info("upload ships its own foundry.toml; not scaffolding")
+        return any(
+            any(self.source_dir.rglob(marker))
+            for marker in self.profile.toolchain.project_markers
+        )
+
+    def scaffold(self) -> Path | None:
+        """Build a bare project to work in -- only if they shipped none.
+
+        Entirely driven by the profile's toolchain. This method knows
+        nothing about Foundry, cargo or anything else.
+        """
+        tc = self.profile.toolchain
+        if tc.project_markers and self.brings_own_project():
+            log.info(
+                "upload ships its own project (%s); not scaffolding",
+                ", ".join(tc.project_markers),
+            )
+            return None
+        if not (tc.scaffold_dirs or tc.scaffold_files or tc.scaffold_links):
             return None
 
         self.poc_dir.mkdir(parents=True, exist_ok=True)
-        (self.poc_dir / "test").mkdir(exist_ok=True)
-        (self.poc_dir / "src").mkdir(exist_ok=True)
+        for rel in tc.scaffold_dirs:
+            (self.poc_dir / rel).mkdir(parents=True, exist_ok=True)
 
-        lib = self.poc_dir / "lib"
-        lib.mkdir(exist_ok=True)
-        link = lib / "forge-std"
-        if not link.exists() and FORGE_STD.is_dir():
-            link.symlink_to(FORGE_STD, target_is_directory=True)
+        for rel, target in tc.scaffold_links:
+            link = self.poc_dir / rel
+            link.parent.mkdir(parents=True, exist_ok=True)
+            dest = Path(self._expand(target))
+            if not link.exists() and dest.is_dir():
+                link.symlink_to(dest, target_is_directory=True)
 
-        (self.poc_dir / "foundry.toml").write_text(f"""\
-# Fallback project, written only because the upload shipped no
-# foundry.toml of its own. If it had, that one would be used as-is.
-[profile.default]
-src = "src"
-test = "test"
-out = "out"
-libs = ["lib"]
+        for rel, content in tc.scaffold_files:
+            path = self.poc_dir / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(self._expand(content))
 
-allow_paths = ["../{self.SOURCE_SUBDIR}"]
-remappings = [
-    "forge-std/={FORGE_STD}/src/",
-    "{self.SOURCE_SUBDIR}/=../{self.SOURCE_SUBDIR}/",
-]
-""")
-        log.info("scaffolded fallback PoC project at %s", self.poc_dir)
+        log.info("scaffolded %s project at %s", tc.key, self.poc_dir)
         return self.poc_dir
 
     def write_briefing(self) -> Path:
@@ -187,43 +185,13 @@ This audit runs in stages. Each stage reads the stage before it.
 ## Layout
 
 - `{self.SOURCE_SUBDIR}/` -- the code under review, untrusted
-- `{self.POC_SUBDIR}/` -- a bare Foundry project, present only if they shipped none
+- `{self.POC_SUBDIR}/` -- a bare project, present only if they shipped none
 - `{self.REPORTS_SUBDIR}/` -- one markdown report per stage
 
-## Compiling and testing
-
-If the upload has its own `foundry.toml`, **use it**. It carries their
-remappings, `lib/`, solc version and optimizer settings, and nothing else
-will compile their code. Work inside their project and add your tests to
-its test directory.
-
-There is no network, so two flags are needed on every forge command:
-
-```
-forge test --offline --use {SOLC_BIN} -vv
-```
-
-`--offline` stops forge reaching for a compiler list, and `--use` points it
-at the solc already in this image. Both are command-line flags, so they
-override the project config without editing a single file of theirs.
-
-If the upload has no `foundry.toml`, use `{self.POC_SUBDIR}/`, where
-`forge-std` is linked and the contracts are reachable as
-`{self.SOURCE_SUBDIR}/Whatever.sol`.
-
+{self.profile.toolchain.briefing}
 A finding is **verified** only when a test you wrote actually ran and
 demonstrated the bug. If you cannot get one to run, say so plainly and
 leave the finding unverified -- a wrong proof is worse than none.
-
-## Tools on PATH
-
-- `forge`, `cast`, `anvil` -- Foundry, for compiling and running tests
-- `slither` -- static analysis, a fast second opinion
-- `solc` -- the Solidity compiler (0.8.28)
-
-There is no internet access. `forge install` and `git clone` will fail.
-Anything not already installed is not available, so do not try to fetch
-dependencies.
 
 ## Scope
 

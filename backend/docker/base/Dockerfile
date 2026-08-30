@@ -1,4 +1,6 @@
-# Base image: the tools an auditor needs, plus the Claude Code runtime.
+# Neutral base: the Claude Code runtime and nothing ecosystem-specific.
+# Solidity tools live in worker-solidity; another ecosystem adds its own
+# image beside it rather than growing this one.
 # Built once and shared, because Foundry and the Node install are slow.
 #
 # Layer order matters. Docker caches each step, but a cached step is only
@@ -22,31 +24,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 
-RUN FOUNDRY_DIR=/opt/foundry sh -c 'curl -L https://foundry.paradigm.xyz | bash' \
-    && FOUNDRY_DIR=/opt/foundry /opt/foundry/bin/foundryup \
-    && chmod -R a+rX /opt/foundry
-
-# forge-std, vendored. The worker has no network, so `forge init` cannot
-# clone it at run time -- it dies with "Could not resolve host: github.com".
-# Baking it in is what lets the breaker scaffold a PoC project offline.
-RUN git clone --depth 1 https://github.com/foundry-rs/forge-std /opt/forge-std \
-    && rm -rf /opt/forge-std/.git \
-    && chmod -R a+rX /opt/forge-std
-
-ENV VIRTUAL_ENV=/opt/solc
-RUN pip install --no-cache-dir slither-analyzer solc-select \
-    && solc-select install 0.8.28 \
-    && solc-select use 0.8.28 \
-    && chmod -R a+rX /opt/solc
-
 RUN pip install --no-cache-dir uv
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    FOUNDRY_DIR=/opt/foundry \
-    FORGE_STD_DIR=/opt/forge-std \
-    VIRTUAL_ENV=/opt/solc \
-    SOLC_BIN=/opt/solc/.solc-select/artifacts/solc-0.8.28/solc-0.8.28 \
-    PATH="/opt/foundry/bin:${PATH}"
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /opt/evmbench

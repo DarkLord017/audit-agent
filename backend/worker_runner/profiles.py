@@ -17,6 +17,7 @@ Adding a new kind of audit means registering a profile and dropping its
 skills in skills/ -- no other code changes.
 """
 
+import os
 from dataclasses import dataclass, field
 
 # Tools every role needs. Agent is here because skills that fan out to
@@ -24,6 +25,31 @@ from dataclasses import dataclass, field
 DEFAULT_TOOLS: tuple[str, ...] = (
     "Read", "Grep", "Glob", "Bash", "Write", "Agent", "Skill",
 )
+
+
+@dataclass(frozen=True)
+class Toolchain:
+    """Everything about a profile that changes with the ecosystem.
+
+    The generic worker code knows none of this. Solidity means Foundry
+    and Slither; Solana would mean cargo and Anchor. Rather than teach
+    workspace.py about either, both are described here as data.
+
+    Adding an ecosystem is a Toolchain, a Dockerfile and the skills. No
+    changes to workspace.py, runner.py, docker_backend.py or consumer.py.
+
+    Strings may use {source}, {poc} and {reports} for the workspace dirs.
+    """
+
+    key: str
+    image: str                                      # worker image with these tools
+    briefing: str                                   # markdown, injected into AGENTS.md
+    # Files that mean "they brought their own project, leave it alone".
+    project_markers: tuple[str, ...] = ()
+    # Used only when no marker is found: a bare project to work in.
+    scaffold_dirs: tuple[str, ...] = ()
+    scaffold_files: tuple[tuple[str, str], ...] = ()
+    scaffold_links: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -45,6 +71,7 @@ class AuditProfile:
     key: str                        # what the API and UI call it
     label: str                      # what a human calls it
     roles: tuple[Role, ...]         # run in order, first to last
+    toolchain: Toolchain            # image, tools and how to build
     include_globs: tuple[str, ...]  # files worth showing the agent
     exclude_globs: tuple[str, ...] = ()
     description: str = ""
@@ -90,6 +117,73 @@ class ProfileRegistry:
 
 registry = ProfileRegistry()
 
+# --- solidity ---------------------------------------------------------
+#
+# Paths baked into the solidity worker image. They live here, next to the
+# toolchain that needs them, rather than as constants in the generic code.
+
+FORGE_STD = os.getenv("FORGE_STD_DIR", "/opt/forge-std")
+SOLC_BIN = os.getenv(
+    "SOLC_BIN", "/opt/solc/.solc-select/artifacts/solc-0.8.28/solc-0.8.28"
+)
+
+SOLIDITY_TOOLS = Toolchain(
+    key="solidity",
+    image=os.getenv("WORKER_IMAGE_SOLIDITY", "evmbench/worker-solidity:latest"),
+    project_markers=("foundry.toml",),
+    scaffold_dirs=("src", "test", "lib"),
+    scaffold_links=(("lib/forge-std", FORGE_STD),),
+    scaffold_files=((
+        "foundry.toml",
+        f"""\
+# Fallback project, written only because the upload shipped no
+# foundry.toml of its own. If it had, that one would be used as-is.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+
+allow_paths = ["../{{source}}"]
+remappings = [
+    "forge-std/={FORGE_STD}/src/",
+    "{{source}}/=../{{source}}/",
+]
+""",
+    ),),
+    briefing=f"""\
+## Compiling and testing
+
+If the upload has its own `foundry.toml`, **use it**. It carries their
+remappings, `lib/`, solc version and optimizer settings, and nothing else
+will compile their code. Work inside their project and add your tests to
+its test directory.
+
+There is no network, so two flags are needed on every forge command:
+
+```
+forge test --offline --use {SOLC_BIN} -vv
+```
+
+`--offline` stops forge reaching for a compiler list, and `--use` points it
+at the solc already in this image. Both are command-line flags, so they
+override the project config without editing a single file of theirs.
+
+If the upload has no `foundry.toml`, use `{{poc}}/`, where `forge-std` is
+linked and the contracts are reachable as `{{source}}/Whatever.sol`.
+
+## Tools on PATH
+
+- `forge`, `cast`, `anvil` -- Foundry, for compiling and running tests
+- `slither` -- static analysis, a fast second opinion
+- `solc` -- the Solidity compiler (0.8.28)
+
+There is no internet access. `forge install` and `git clone` will fail.
+Anything not already installed is not available, so do not try to fetch
+dependencies.
+""",
+)
+
 AUDITOR = Role(
     key="auditor",
     label="Auditor",
@@ -115,6 +209,7 @@ registry.register(
         key="solidity",
         label="Solidity smart contracts",
         roles=(AUDITOR, BREAKER),
+        toolchain=SOLIDITY_TOOLS,
         include_globs=("**/*.sol",),
         exclude_globs=(
             "**/lib/**", "**/node_modules/**", "**/test/**",
