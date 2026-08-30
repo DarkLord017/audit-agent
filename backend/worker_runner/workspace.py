@@ -82,10 +82,14 @@ class Workspace:
         """Install every skill this profile's roles need."""
         installed = []
         for skill in self.profile.skills:
-            src = self.skills_source / skill
+            # Grouped by ecosystem on disk, installed flat: Claude Code
+            # discovers a skill by its directory name, and Role.skill is
+            # that name.
+            src = self.skills_source / self.profile.toolchain.key / skill
             if not (src / "SKILL.md").is_file():
                 raise SkillNotVendored(
-                    f"no SKILL.md at {src}. Put the skill in skills/{skill}/"
+                    f"no SKILL.md at {src}. Put the skill in "
+                    f"skills/{self.profile.toolchain.key}/{skill}/"
                 )
             dest = self.skills_dir / skill
             if dest.exists():
