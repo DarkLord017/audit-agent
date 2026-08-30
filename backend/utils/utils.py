@@ -45,6 +45,16 @@ class Vulnerability(BaseModel):
     impact: str | None = Field(default=None, max_length=5_000)
     recommendation: str | None = Field(default=None, max_length=5_000)
 
+    # --- proof, filled in by the breaker role ------------------------
+    #
+    # verified is the whole point of the second stage: it is True only
+    # when a Foundry test actually ran and demonstrated the bug. An
+    # unverified finding is still kept -- a real bug nobody could write
+    # a test for is worth seeing -- it just carries no proof.
+    poc: str | None = Field(default=None, max_length=20_000)
+    verified: bool = False
+    verification: str | None = Field(default=None, max_length=5_000)
+
     @field_validator("file")
     @classmethod
     def no_path_escape(cls, v: str) -> str:
@@ -80,8 +90,17 @@ class Report(BaseModel):
             out[v.severity.value] += 1
         return out
 
+    @property
+    def verified_count(self) -> int:
+        """How many findings came with a Foundry test that passed."""
+        return sum(1 for v in self.vulnerabilities if v.verified)
+
     def sorted_findings(self) -> list[Vulnerability]:
-        return sorted(self.vulnerabilities, key=lambda v: (v.severity.rank, v.file))
+        """Worst first, and within a severity, proven before merely claimed."""
+        return sorted(
+            self.vulnerabilities,
+            key=lambda v: (v.severity.rank, not v.verified, v.file),
+        )
 
 
 @dataclass 

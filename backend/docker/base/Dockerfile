@@ -26,6 +26,12 @@ RUN FOUNDRY_DIR=/opt/foundry sh -c 'curl -L https://foundry.paradigm.xyz | bash'
     && FOUNDRY_DIR=/opt/foundry /opt/foundry/bin/foundryup \
     && chmod -R a+rX /opt/foundry
 
+# forge-std, vendored. The worker has no network, so `forge init` cannot
+# clone it at run time -- it dies with "Could not resolve host: github.com".
+# Baking it in is what lets the breaker scaffold a PoC project offline.
+RUN git clone --depth 1 https://github.com/foundry-rs/forge-std /opt/forge-std \
+    && rm -rf /opt/forge-std/.git \
+    && chmod -R a+rX /opt/forge-std
 
 ENV VIRTUAL_ENV=/opt/solc
 RUN pip install --no-cache-dir slither-analyzer solc-select \
@@ -38,7 +44,9 @@ RUN pip install --no-cache-dir uv
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     FOUNDRY_DIR=/opt/foundry \
+    FORGE_STD_DIR=/opt/forge-std \
     VIRTUAL_ENV=/opt/solc \
+    SOLC_BIN=/opt/solc/.solc-select/artifacts/solc-0.8.28/solc-0.8.28 \
     PATH="/opt/foundry/bin:${PATH}"
 
 WORKDIR /opt/evmbench

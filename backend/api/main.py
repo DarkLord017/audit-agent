@@ -12,8 +12,6 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create the tables if they are not there. Every statement in
-    # table.sql is IF NOT EXISTS, so this is safe on every start.
     Database().init_schema()
     log.info("schema ready")
     yield

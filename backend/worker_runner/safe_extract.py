@@ -16,15 +16,6 @@ MAX_FILES = 5_000
 MAX_TOTAL_BYTES = 200 * 1024 * 1024   # 200 MB uncompressed
 MAX_FILE_BYTES = 10 * 1024 * 1024     # 10 MB per file
 
-# Anything that an agent runtime reads as *instructions* is dropped.
-# The agent runs with cwd inside the workspace and setting_sources
-# ["project"], so a CLAUDE.md or AGENTS.md in the upload would be
-# auto-loaded as orders -- letting submitted code tell the auditor to
-# report clean. For a benchmark that is forgeable results, so these are
-# skipped outright.
-#
-# Ordinary documentation (README.md, docs/) is kept. It is genuine
-# context and no runtime treats it as instructions.
 SKIP_DIRS = {".claude", ".git", ".github", ".cursor", "node_modules"}
 SKIP_FILES = {
     "CLAUDE.md", "CLAUDE.local.md",     # Claude Code
