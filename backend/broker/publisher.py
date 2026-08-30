@@ -32,7 +32,40 @@ class JobPublisher:
             declare_queue(self._channel)
         return self._channel
 
+    # Both trees, because a dead connection surfaces either way depending
+    # on where pika notices it. StreamLostError sits under
+    # AMQPConnectionError; ChannelWrongStateError under AMQPChannelError.
+    RETRYABLE = (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPChannelError)
+
     def publish(self, message: JobMessage) -> None:
+        """Publish, reconnecting once if the broker dropped us.
+
+        The is_closed check in `channel` is not enough on its own. pika
+        only discovers a connection the broker closed when it tries to
+        use it, so an idle API answers the next submission with a 500
+        (StreamLostError: connection reset by peer) instead of quietly
+        reconnecting. One retry on a fresh connection covers it; a second
+        failure is real and should surface.
+        """
+        try:
+            self._publish(message)
+        except self.RETRYABLE as exc:
+            log.warning("broker dropped us (%s); reconnecting and retrying once", exc)
+            self._reset()
+            self._publish(message)
+        log.info("queued job %s", message.job_id)
+
+    def _reset(self) -> None:
+        """Throw the cached connection away so `channel` builds a new one."""
+        try:
+            if self._connection is not None and self._connection.is_open:
+                self._connection.close()
+        except Exception:                       # already gone; nothing to salvage
+            log.debug("stale connection would not close cleanly", exc_info=True)
+        self._connection = None
+        self._channel = None
+
+    def _publish(self, message: JobMessage) -> None:
         self.channel.basic_publish(
             exchange="",
             routing_key=QUEUE_NAME,
@@ -45,7 +78,6 @@ class JobPublisher:
                 message_id=message.job_id,
             ),
         )
-        log.info("queued job %s", message.job_id)
 
     def close(self) -> None:
         if self._connection and self._connection.is_open:

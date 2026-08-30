@@ -84,6 +84,24 @@ class Report(BaseModel):
         return out
 
     @property
+    def missing_proofs(self) -> list[str]:
+        """Findings claimed verified that carry no test source.
+
+        The proof is why the second stage exists. If it does not survive
+        into the report, the finding is an assertion again and there is
+        nothing to score it on.
+        """
+        return [v.title for v in self.vulnerabilities if v.verified and not v.poc]
+
+    @property
+    def unlocated(self) -> list[str]:
+        """Findings with no usable file path -- unscoreable, unfixable."""
+        return [
+            v.title for v in self.vulnerabilities
+            if not v.file or v.file.strip().lower() in {"unknown", "n/a", "-"}
+        ]
+
+    @property
     def verified_count(self) -> int:
         """How many findings came with a Foundry test that passed."""
         return sum(1 for v in self.vulnerabilities if v.verified)

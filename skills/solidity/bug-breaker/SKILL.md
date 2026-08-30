@@ -36,23 +36,36 @@ way this stage fails.
 
 **1. Read the report.** List every finding: title, file, function, claim.
 
-**2. Cross-check with Slither.** One pass over the tree. It is fast and it
+**2. Locate every finding in the source.** The stage before you names
+contracts and functions, not files. You have the code and `grep`, so
+resolve each one yourself:
+
+```
+grep -rn "function withdraw" unzipped/
+```
+
+Record the path relative to `unzipped/` and the line number. A finding
+nobody can point at is not actionable, and a benchmark cannot score it.
+Only write `unknown` if the symbol genuinely is not in the tree -- say so
+rather than guessing a plausible path.
+
+**3. Cross-check with Slither.** One pass over the tree. It is fast and it
 grounds your triage in something other than the first stage's prose. See
 [references/slither.md](references/slither.md) for the commands that work
 in this container -- in particular, Slither writes to **stderr**, so `2>&1`
 is required or you will see nothing.
 
-**3. Triage every finding.** Apply the brocards in
+**4. Triage every finding.** Apply the brocards in
 [references/triage.md](references/triage.md). Each is a falsifiable test.
 Record a verdict and one line of reasoning per finding. Stop at the first
 DISMISS.
 
-**4. Prove the survivors, worst first.** Follow
+**5. Prove the survivors, worst first.** Follow
 [references/foundry.md](references/foundry.md) to compile and
 [references/poc.md](references/poc.md) to write a test that actually
 demonstrates the bug.
 
-**5. Report everything.** Including what you dismissed and what you could
+**6. Report everything.** Including what you dismissed and what you could
 not reach.
 
 ## Verdicts
@@ -99,7 +112,7 @@ including dismissed and unproven ones.
 
 ## 1. <Title> — **VERIFIED**
 
-`Contract.function` · `unzipped/path/File.sol:42` · Confidence in: <from input>
+`Contract.function` · `unzipped/<real/path>.sol:<line>` · Confidence in: <from input>
 
 **Claim** — <what the first stage said, one sentence>
 
@@ -109,7 +122,10 @@ including dismissed and unproven ones.
 
 ```solidity
 // poc/test/Foo.t.sol
-<the test you wrote>
+<the COMPLETE test source, verbatim -- every line you actually ran,
+ including imports and setUp. Not a summary, not an excerpt. This block
+ is the only place the proof survives: the stage that converts this
+ report to JSON has no tools and cannot open your files.>
 ```
 
 **Result**

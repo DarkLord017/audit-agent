@@ -68,14 +68,24 @@ It must match this JSON Schema exactly:
 
 Rules:
 - one entry in "vulnerabilities" per finding in the report
-- "file" must be a path relative to the audited source, never absolute
-  and never containing ".."
+- "file" must be the real path relative to the audited source, never
+  absolute and never containing "..". Strip any leading "unzipped/".
+  Use "unknown" ONLY when the report gives no path at all -- never as a
+  shortcut, and never invent a plausible-looking one.
+- "start_line"/"end_line" come from the report's `file.sol:42` markers
+  when it gives them, else null
 - map the report's confidence score to "severity":
   90-100 -> critical, 70-89 -> high, 50-69 -> medium, below 50 -> low
 - "verified" is true ONLY where the report shows a proof-of-concept test
   that actually ran and demonstrated the bug. If the report is unclear,
   or the test did not pass, use false. Never guess it true.
-- "poc" carries the test source if the report includes one, else null
+- "poc" carries the proof-of-concept test source VERBATIM whenever the
+  report shows one, copied character for character from its ```solidity
+  block. Never summarise it, never truncate it, never replace it with a
+  description, and never leave it null when the report contains a test.
+  A finding marked verified with a null poc is a failure of this step:
+  the proof is the whole point of the second stage, and this JSON is the
+  only place it is kept.
 - "verification" carries a one-line note on how it was proven or why it
   could not be, else null
 - keep unverified findings. They are not errors, they are unproven.
@@ -177,8 +187,27 @@ class AuditRunner:
             report=markdown,
         )
         # No skills, no tools, few turns. This is a formatting job.
-        raw = await self._collect(prompt, self.options(max_turns=3))
-        return Report.model_validate(self._extract_json(raw))
+        # Was 3. Copying several full test sources through verbatim is
+        # more work than a one-shot reformat, and a truncated reply loses
+        # exactly the proofs the breaker stage existed to produce.
+        raw = await self._collect(prompt, self.options(max_turns=8))
+        report = Report.model_validate(self._extract_json(raw))
+
+        # Loud, not fatal. A report that reaches here is still worth
+        # keeping, but these two gaps make findings unscoreable and are
+        # invisible in the JSON itself.
+        if report.missing_proofs:
+            log.warning(
+                "%d of %d verified findings carry no PoC source: %s",
+                len(report.missing_proofs), report.verified_count,
+                "; ".join(report.missing_proofs),
+            )
+        if report.unlocated:
+            log.warning(
+                "%d findings have no file path: %s",
+                len(report.unlocated), "; ".join(report.unlocated),
+            )
+        return report
 
     # --- plumbing -----------------------------------------------------
 
