@@ -33,17 +33,18 @@ class ProxyAPI:
     # The worker has no business calling anything else.
     ALLOWED_PATHS = {"messages", "messages/count_tokens"}
 
-    # Headers we refuse to pass on. Authorization is replaced, and the
-    # hop-by-hop ones describe our connection, not the upstream one.
-    DROP_HEADERS = {
-        "authorization", "x-api-key", "host", "content-length",
-        "connection", "keep-alive", "transfer-encoding",
-        # We hand the worker a decoded body, so asking upstream to
-        # compress only creates a body whose encoding we then have to
-        # re-declare. Simpler to ask for none.
-        "accept-encoding",
-        # Attached here from configuration, never taken from the worker.
-        "anthropic-workspace-id",
+    # Allowlist, not denylist. The worker is untrusted
+    # (permission_mode=bypassPermissions plus attacker-controlled unzipped
+    # code) and can inject hop-by-hop or Anthropic-specific headers a
+    # denylist would miss: x-forwarded-*, extra anthropic-*, authorization.
+    # Only headers the Claude Agent SDK / Claude Code CLI actually needs
+    # are copied; x-api-key, workspace id, and accept-encoding are set
+    # here, never taken from the worker.
+    ALLOWED_HEADERS = {
+        "content-type",
+        "anthropic-version",
+        # Claude Code CLI sends this for prompt caching and other betas.
+        "anthropic-beta",
     }
 
     # Identity-linked keys are scoped to a workspace and the API refuses a
@@ -131,15 +132,7 @@ class ProxyAPI:
         except UnknownModel as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from None
 
-        headers = {
-            k: v for k, v in request.headers.items()
-            if k.lower() not in self.DROP_HEADERS
-        }
-        headers["x-api-key"] = real_key          # <- the swap
-        if self.WORKSPACE_ID:
-            headers["anthropic-workspace-id"] = self.WORKSPACE_ID
-        headers.setdefault("anthropic-version", "2023-06-01")
-        headers["accept-encoding"] = "identity"
+        headers = self._upstream_headers(request.headers.items(), real_key)
 
         upstream = self.client.build_request(
             "POST", f"{self.UPSTREAM}/v1/{path.strip('/')}", headers=headers, content=body,
@@ -154,6 +147,25 @@ class ProxyAPI:
             status_code=resp.status_code,
             media_type=resp.headers.get("content-type"),
         )
+
+    @classmethod
+    def _upstream_headers(cls, incoming, real_key: str) -> dict[str, str]:
+        """Copy only allowlisted worker headers; attach the real key here.
+
+        Incoming keys are matched case-insensitively. `x-api-key` and
+        `anthropic-workspace-id` are never taken from the worker.
+        """
+        incoming = list(incoming)
+        headers = {
+            k: v for k, v in incoming
+            if k.lower() in cls.ALLOWED_HEADERS
+        }
+        headers["x-api-key"] = real_key          # <- the swap; never from the worker
+        if cls.WORKSPACE_ID:
+            headers["anthropic-workspace-id"] = cls.WORKSPACE_ID
+        headers.setdefault("anthropic-version", "2023-06-01")
+        headers["accept-encoding"] = "identity"
+        return headers
 
     @staticmethod
     def _rough_input_tokens(body: bytes) -> int:
