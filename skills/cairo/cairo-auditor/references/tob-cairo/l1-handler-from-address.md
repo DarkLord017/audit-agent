@@ -1,7 +1,7 @@
 <!--
 Adapted from the cairo-vulnerability-scanner skill in trailofbits/skills,
 which is licensed CC-BY-SA-4.0. This file is therefore also CC-BY-SA-4.0.
-See ../../../ATTRIBUTION.md.
+See ../../ATTRIBUTION.md.
 -->
 
 # Unchecked `from_address` in L1 handlers

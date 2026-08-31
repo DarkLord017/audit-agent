@@ -2,7 +2,7 @@
 Adapted from the cairo-vulnerability-scanner skill in trailofbits/skills
 (pattern: "Storage Collision — conflicting storage variable hashes"),
 which is licensed CC-BY-SA-4.0. This file is therefore also CC-BY-SA-4.0.
-See ../../../ATTRIBUTION.md.
+See ../../ATTRIBUTION.md.
 -->
 
 # Storage collision
