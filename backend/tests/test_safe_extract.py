@@ -91,3 +91,25 @@ def test_copy_capped_running_total() -> None:
             running_total=50,
         )
     assert out.tell() == 0
+
+
+def test_lying_zipinfo_file_size_is_caught(tmp_path: Path, monkeypatch) -> None:
+    """Pass 1 trusts ZipInfo.file_size; pass 2 must still cap actual bytes.
+
+    zipfile.ZipExtFile stops at the header size, so a header lie is
+    simulated by handing extract a stream longer than ZipInfo.file_size.
+    """
+    zpath = _write_zip(tmp_path / "lie.zip", {"blob.bin": b"x"})
+    dest = tmp_path / "out"
+    orig_open = zipfile.ZipFile.open
+
+    def fake_open(self, info, mode="r", pwd=None):
+        if getattr(info, "filename", None) == "blob.bin":
+            return io.BytesIO(b"x" * 500)
+        return orig_open(self, info, mode, pwd=pwd)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", fake_open)
+
+    with pytest.raises(UnsafeZip, match="file too large"):
+        safe_extract(zpath, dest, max_file_bytes=100, max_total_bytes=10_000)
+    assert not (dest / "blob.bin").exists()
