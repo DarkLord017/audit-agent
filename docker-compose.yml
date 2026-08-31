@@ -24,7 +24,9 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-evmbench}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-evmbench}
     ports:
-      - "15672:15672"      # management UI
+      # Localhost only so `make` help (http://localhost:15672) still works.
+      # Production should leave this unpublished.
+      - "127.0.0.1:15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
