@@ -24,7 +24,13 @@ not a substitute for those files.
 | Skill | Author | Licence | Upstream |
 |---|---|---|---|
 | [`solidity-auditor`](./solidity/solidity-auditor) | [Pashov Audit Group](https://github.com/pashov) — **third party** | MIT | [pashov/skills](https://github.com/pashov/skills/tree/main/solidity-auditor) |
+| [`optimism-auditor`](./solidity/optimism-auditor) | this project | original | chain overlay for OP Mainnet / OP Stack |
 | [`bug-breaker`](./solidity/bug-breaker) | this project, except `references/triage.md` | mixed — see note | [trailofbits/skills](https://github.com/trailofbits/skills) (triage only) |
+
+EVM **chain** overlays sit next to `solidity-auditor` as `<chain>-auditor`
+(Optimism first). They share the Solidity worker image. The
+`solidity-optimism` profile runs `optimism-auditor` then `bug-breaker`.
+Generic L1-style jobs keep using profile `solidity`.
 
 > **Note on `bug-breaker`:** it is original work apart from
 > `references/triage.md`, which adapts Trail of Bits' vulnerability-triage

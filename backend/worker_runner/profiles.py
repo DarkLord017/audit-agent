@@ -221,6 +221,65 @@ registry.register(
     )
 )
 
+# Chain-specific Solidity profiles share the Foundry/Slither image and
+# the breaker skill. Toolchain.key stays "solidity" so skills still load
+# from skills/solidity/<skill>/. Add more as <chain>-auditor + a profile.
+
+OPTIMISM_AUDITOR = Role(
+    key="auditor",
+    label="Optimism auditor",
+    skill="optimism-auditor",
+    command="/optimism-auditor",
+    description=(
+        "Reads the contracts as they run on OP Stack: generic EVM bugs "
+        "plus L2 block time, fees, predeploys, aliasing and messenger."
+    ),
+)
+
+OPTIMISM_BRIEFING = """\
+
+## This job is an OP Stack audit
+
+The first stage is `optimism-auditor`, not the generic Solidity auditor.
+Assume OP Mainnet / OP Stack execution: ~2s L2 blocks, `block.number` is
+L2, L1 origin lives on `L1Block` at `0x4200…0015`, users pay an L1 data
+fee that `tx.gasprice` does not include, and L1 contract deposits arrive
+from an aliased `msg.sender`.
+
+Anvil is not OP. For PoCs, mock predeploys at the canonical `0x4200…`
+addresses rather than forking (there is no RPC). Deposit transaction type
+`0x7e` does not exist here — replay the L2-side call the messenger or
+aliased sender would make.
+"""
+
+OPTIMISM_TOOLS = Toolchain(
+    key="solidity",
+    image=SOLIDITY_TOOLS.image,
+    briefing=SOLIDITY_TOOLS.briefing + OPTIMISM_BRIEFING,
+    project_markers=SOLIDITY_TOOLS.project_markers,
+    scaffold_dirs=SOLIDITY_TOOLS.scaffold_dirs,
+    scaffold_files=SOLIDITY_TOOLS.scaffold_files,
+    scaffold_links=SOLIDITY_TOOLS.scaffold_links,
+)
+
+registry.register(
+    AuditProfile(
+        key="solidity-optimism",
+        label="Solidity on Optimism / OP Stack",
+        roles=(OPTIMISM_AUDITOR, BREAKER),
+        toolchain=OPTIMISM_TOOLS,
+        include_globs=("**/*.sol",),
+        exclude_globs=(
+            "**/lib/**", "**/node_modules/**", "**/test/**",
+            "**/mocks/**", "**/*.t.sol", "**/*Test*.sol", "**/*Mock*.sol",
+        ),
+        description=(
+            "Loss-of-funds in Solidity as executed on OP Mainnet and other "
+            "OP Stack L2s, with Foundry proofs."
+        ),
+    )
+)
+
 # --- other ecosystems -------------------------------------------------
 #
 # Language agents drop backend/worker_runner/ecosystems/<lang>.py, which
