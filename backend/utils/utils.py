@@ -132,3 +132,33 @@ class Job:
     output_tokens: int = 0
     cost_usd: Decimal = field(default_factory=lambda: Decimal(0))
     budget_usd: Decimal = field(default_factory=lambda: Decimal("50.0"))
+
+
+class JobResponse(BaseModel):
+    """Public job view. Omits host-local fields (upload_path, container_id)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: JobStatus
+    model: str
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+    report: Report | None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: Decimal = Decimal(0)
+    budget_usd: Decimal = Decimal("50.0")
+
+    @classmethod
+    def from_job(cls, job: Job) -> "JobResponse":
+        return cls.model_validate(job)
+
+
+class JobHistoryResponse(BaseModel):
+    jobs: list[JobResponse]
+    limit: int
+    offset: int
+    count: int
