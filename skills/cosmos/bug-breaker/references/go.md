@@ -21,13 +21,13 @@ do not fake it.
 
 ## Use their project, not yours
 
-If `unzipped/` contains a `go.mod`, **work inside their module**. It
+If `unzipped/` contains a `go.mod`, **build against their module**. It
 carries the SDK version, replace directives and module path their code
-needs. Nothing else will compile it. Put your tests next to theirs
-(`x/foo/keeper/poc_withdraw_test.go`) or in a `_test` package that
-imports theirs.
+needs. Nothing else will compile it. Write tests in `poc/go/` and
+`replace` their module path to `../unzipped` (adjust the relative path).
+**Never modify `unzipped/`** — not even to add a `*_test.go`.
 
-Only if they shipped no `go.mod` do you use `poc/go/`, which is a stub
+Only if they shipped no `go.mod` do you use `poc/go/` as a stub
 module. You will almost certainly still be UNVERIFIED without their
 module path — say so.
 
@@ -60,7 +60,6 @@ runs and demonstrates the claimed behaviour counts. See
 ## Never modify unzipped/
 
 Do not `go mod tidy` their tree. Do not edit keepers to make a test
-compile. Add a `*_test.go` file only — tests are not the code under
-review, but keep them out of `unzipped/` if you can write them in
-`poc/go/` with a `replace` against the unzipped module path. If the
-replace still needs a write inside `unzipped/`, stop and mark UNVERIFIED.
+compile. Do not add files under `unzipped/`. Tests live in `poc/go/`
+with a `replace` against their module path. If the test still cannot
+compile without writing inside `unzipped/`, stop and mark UNVERIFIED.

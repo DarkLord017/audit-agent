@@ -60,6 +60,9 @@ DISMISS.
 [references/cargo.md](references/cargo.md) for CosmWasm. Write the test
 itself per [references/poc.md](references/poc.md).
 
+**Never modify `unzipped/`.** Tests live under `poc/`. A path
+dependency or Go `replace` is how you reach their code.
+
 Pick the runner from the finding's language:
 
 | Finding lives in | Runner |
