@@ -132,15 +132,7 @@ class ProxyAPI:
         except UnknownModel as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from None
 
-        headers = {
-            k: v for k, v in request.headers.items()
-            if k.lower() in self.ALLOWED_HEADERS
-        }
-        headers["x-api-key"] = real_key          # <- the swap; never from the worker
-        if self.WORKSPACE_ID:
-            headers["anthropic-workspace-id"] = self.WORKSPACE_ID
-        headers.setdefault("anthropic-version", "2023-06-01")
-        headers["accept-encoding"] = "identity"
+        headers = self._upstream_headers(request.headers.items(), real_key)
 
         upstream = self.client.build_request(
             "POST", f"{self.UPSTREAM}/v1/{path.strip('/')}", headers=headers, content=body,
@@ -155,6 +147,25 @@ class ProxyAPI:
             status_code=resp.status_code,
             media_type=resp.headers.get("content-type"),
         )
+
+    @classmethod
+    def _upstream_headers(cls, incoming, real_key: str) -> dict[str, str]:
+        """Copy only allowlisted worker headers; attach the real key here.
+
+        Incoming keys are matched case-insensitively. `x-api-key` and
+        `anthropic-workspace-id` are never taken from the worker.
+        """
+        incoming = list(incoming)
+        headers = {
+            k: v for k, v in incoming
+            if k.lower() in cls.ALLOWED_HEADERS
+        }
+        headers["x-api-key"] = real_key          # <- the swap; never from the worker
+        if cls.WORKSPACE_ID:
+            headers["anthropic-workspace-id"] = cls.WORKSPACE_ID
+        headers.setdefault("anthropic-version", "2023-06-01")
+        headers["accept-encoding"] = "identity"
+        return headers
 
     @staticmethod
     def _rough_input_tokens(body: bytes) -> int:
