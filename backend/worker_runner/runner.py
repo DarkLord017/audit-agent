@@ -72,16 +72,21 @@ Rules:
   absolute and never containing "..". Strip any leading "unzipped/".
   Use "unknown" ONLY when the report gives no path at all -- never as a
   shortcut, and never invent a plausible-looking one.
-- "start_line"/"end_line" come from the report's `file.sol:42` markers
-  when it gives them, else null
+- "start_line"/"end_line" come from the report's `path:line` markers
+  (any extension: `file.sol:42`, `lib.rs:17`, `contract.cairo:9`,
+  `module.move:3`, `msg.rs:10`, `jetton.fc:8`, `vault.vy:12`,
+  `app.teal:4`, …) when it gives them, else null
 - map the report's confidence score to "severity":
   90-100 -> critical, 70-89 -> high, 50-69 -> medium, below 50 -> low
 - "verified" is true ONLY where the report shows a proof-of-concept test
   that actually ran and demonstrated the bug. If the report is unclear,
   or the test did not pass, use false. Never guess it true.
 - "poc" carries the proof-of-concept test source VERBATIM whenever the
-  report shows one, copied character for character from its ```solidity
-  block. Never summarise it, never truncate it, never replace it with a
+  report shows one, copied character for character from the COMPLETE
+  fenced code block under that finding's Proof section, whatever the
+  language tag (```solidity, ```rust, ```cairo, ```move, ```go,
+  ```python, ```func, ```tact, ```vyper, ```teal, ```typescript, …).
+  Never summarise it, never truncate it, never replace it with a
   description, and never leave it null when the report contains a test.
   A finding marked verified with a null poc is a failure of this step:
   the proof is the whole point of the second stage, and this JSON is the

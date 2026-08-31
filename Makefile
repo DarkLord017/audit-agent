@@ -41,9 +41,15 @@ build: build-base build-worker build-backend  ## build every image
 build-base:  ## neutral base, amd64 (python, node, claude-code)
 	docker build --platform $(PLATFORM) -t evmbench/base:latest -f backend/docker/base/Dockerfile .
 
-.PHONY: build-worker
-build-worker:  ## solidity worker (foundry, slither, solc, forge-std)
-	docker build --platform $(PLATFORM) -t evmbench/worker-solidity:latest -f backend/docker/worker-solidity/Dockerfile .
+# One image per backend/docker/worker-<name>/Dockerfile → evmbench/worker-<name>:latest
+WORKER_DOCKERFILES := $(wildcard backend/docker/worker-*/Dockerfile)
+WORKER_NAMES       := $(patsubst backend/docker/worker-%/Dockerfile,%,$(WORKER_DOCKERFILES))
+WORKER_TARGETS     := $(addprefix build-worker-,$(WORKER_NAMES))
+
+.PHONY: build-worker $(WORKER_TARGETS)
+build-worker: $(WORKER_TARGETS)  ## all worker-* images (wildcard of backend/docker/worker-*/)
+$(WORKER_TARGETS): build-worker-%:
+	docker build --platform $(PLATFORM) -t evmbench/worker-$*:latest -f backend/docker/worker-$*/Dockerfile .
 
 .PHONY: build-backend
 build-backend:  ## api / proxy / instancer

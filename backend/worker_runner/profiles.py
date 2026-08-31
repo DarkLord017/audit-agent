@@ -1,24 +1,26 @@
 """Audit profiles and the roles inside them.
 
-A profile is one kind of review: solidity today, others later. Each
-profile is a pipeline of roles that run in order, handing their report
-to the next one.
+A profile is one kind of review: solidity here, other ecosystems in
+ecosystems/. Each profile is a pipeline of roles that run in order,
+handing their report to the next one.
 
 Today that is two roles:
 
     auditor  reads the code and claims bugs
-    breaker  tries to prove those claims with Foundry and Slither
+    breaker  tries to prove those claims with a toolchain-specific PoC
 
 Splitting them is the point. An agent that both finds and judges its own
 bugs grades its own homework; a second role that has to produce a
 passing test cannot wave a claim through.
 
-Adding a new kind of audit means registering a profile and dropping its
-skills in skills/ -- no other code changes.
+Adding a new kind of audit means dropping a module in ecosystems/ that
+registers a profile, plus skills under skills/<toolchain.key>/.
 """
 
+import importlib
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # Tools every role needs. Agent is here because skills that fan out to
 # specialist subagents cannot work without it.
@@ -58,7 +60,7 @@ class Role:
 
     key: str                        # short name, also the report filename
     label: str                      # what a human calls it
-    skill: str                      # directory name under skills/
+    skill: str                      # directory name under skills/<toolchain.key>/
     command: str                    # what we send the agent to start it
     allowed_tools: tuple[str, ...] = DEFAULT_TOOLS
     max_turns: int = 200
@@ -219,11 +221,15 @@ registry.register(
     )
 )
 
-# --- to add another kind of audit -------------------------------------
+# --- other ecosystems -------------------------------------------------
 #
-# 1. put each role's skill in  skills/<skill-name>/SKILL.md
-# 2. describe the roles and register the profile here
-#
-# The pipeline shape is not fixed at two. A profile can be a single role
-# if there is nothing to verify, or three if a triage step earns its
-# keep.
+# Language agents drop backend/worker_runner/ecosystems/<lang>.py, which
+# calls registry.register(...). Skills live at
+# skills/<toolchain.key>/<skill>/. Do not add those profiles here.
+
+_ECOSYSTEMS = Path(__file__).resolve().parent / "ecosystems"
+if _ECOSYSTEMS.is_dir():
+    for _mod in sorted(_ECOSYSTEMS.glob("*.py")):
+        if _mod.stem.startswith("_"):
+            continue
+        importlib.import_module(f"backend.worker_runner.ecosystems.{_mod.stem}")
