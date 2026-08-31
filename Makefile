@@ -95,12 +95,13 @@ health:  ## check the api is up
 
 ZIP ?= fixtures/vulnerable.zip
 MODEL ?= claude-opus-5
+PROFILE ?= solidity
 
 .PHONY: submit
-submit:  ## submit an audit.  make submit ZIP=path/to/code.zip
+submit:  ## submit an audit.  make submit ZIP=path/to/code.zip PROFILE=solidity-optimism
 	@test -f $(ZIP) || { echo "no such zip: $(ZIP) -- try 'make fixture'"; exit 1; }
 	@curl -fsS -X POST $(API)/v1/jobs/start \
-	  -F "file=@$(ZIP)" -F "model=$(MODEL)" -F "profile=solidity"
+	  -F "file=@$(ZIP)" -F "model=$(MODEL)" -F "profile=$(PROFILE)"
 	@echo
 
 .PHONY: jobs
