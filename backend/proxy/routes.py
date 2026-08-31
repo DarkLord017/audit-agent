@@ -33,17 +33,18 @@ class ProxyAPI:
     # The worker has no business calling anything else.
     ALLOWED_PATHS = {"messages", "messages/count_tokens"}
 
-    # Headers we refuse to pass on. Authorization is replaced, and the
-    # hop-by-hop ones describe our connection, not the upstream one.
-    DROP_HEADERS = {
-        "authorization", "x-api-key", "host", "content-length",
-        "connection", "keep-alive", "transfer-encoding",
-        # We hand the worker a decoded body, so asking upstream to
-        # compress only creates a body whose encoding we then have to
-        # re-declare. Simpler to ask for none.
-        "accept-encoding",
-        # Attached here from configuration, never taken from the worker.
-        "anthropic-workspace-id",
+    # Allowlist, not denylist. The worker is untrusted
+    # (permission_mode=bypassPermissions plus attacker-controlled unzipped
+    # code) and can inject hop-by-hop or Anthropic-specific headers a
+    # denylist would miss: x-forwarded-*, extra anthropic-*, authorization.
+    # Only headers the Claude Agent SDK / Claude Code CLI actually needs
+    # are copied; x-api-key, workspace id, and accept-encoding are set
+    # here, never taken from the worker.
+    ALLOWED_HEADERS = {
+        "content-type",
+        "anthropic-version",
+        # Claude Code CLI sends this for prompt caching and other betas.
+        "anthropic-beta",
     }
 
     # Identity-linked keys are scoped to a workspace and the API refuses a
@@ -133,9 +134,9 @@ class ProxyAPI:
 
         headers = {
             k: v for k, v in request.headers.items()
-            if k.lower() not in self.DROP_HEADERS
+            if k.lower() in self.ALLOWED_HEADERS
         }
-        headers["x-api-key"] = real_key          # <- the swap
+        headers["x-api-key"] = real_key          # <- the swap; never from the worker
         if self.WORKSPACE_ID:
             headers["anthropic-workspace-id"] = self.WORKSPACE_ID
         headers.setdefault("anthropic-version", "2023-06-01")
