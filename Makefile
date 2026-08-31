@@ -5,6 +5,8 @@ export PWD := $(shell pwd)
 
 COMPOSE := docker compose
 API     := http://localhost:1337
+# Prefer an exported token; otherwise the one `make env` wrote into .env.
+API_AUTH_TOKEN ?= $(shell sed -n 's/^API_AUTH_TOKEN=//p' .env 2>/dev/null)
 
 # The worker must be amd64. solc-select ships linux-amd64 binaries only,
 # so an arm64 worker image builds fine and then cannot run the compiler.
@@ -29,7 +31,9 @@ env:  ## create .env from the template
 	@test -f .env && echo ".env exists, leaving it alone" || { \
 	  cp .env.example .env; \
 	  key=$$($(MAKE) -s secret); \
-	  sed -i.bak "s|^PROXY_SECRET_KEY=.*|PROXY_SECRET_KEY=$$key|" .env && rm -f .env.bak; \
+	  token=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+	  sed -i.bak "s|^PROXY_SECRET_KEY=.*|PROXY_SECRET_KEY=$$key|" .env && \
+	  sed -i.bak "s|^API_AUTH_TOKEN=.*|API_AUTH_TOKEN=$$token|" .env && rm -f .env.bak; \
 	  echo "wrote .env -- now put your ANTHROPIC_API_KEY in it"; }
 
 # --- images ----------------------------------------------------------
@@ -100,19 +104,20 @@ MODEL ?= claude-opus-5
 submit:  ## submit an audit.  make submit ZIP=path/to/code.zip
 	@test -f $(ZIP) || { echo "no such zip: $(ZIP) -- try 'make fixture'"; exit 1; }
 	@curl -fsS -X POST $(API)/v1/jobs/start \
+	  -H "X-API-Key: $(API_AUTH_TOKEN)" \
 	  -F "file=@$(ZIP)" -F "model=$(MODEL)" -F "profile=solidity"
 	@echo
 
 .PHONY: jobs
 jobs:  ## list recent jobs
-	@curl -fsS "$(API)/v1/jobs/history?limit=10" \
+	@curl -fsS -H "X-API-Key: $(API_AUTH_TOKEN)" "$(API)/v1/jobs/history?limit=10" \
 	  | python3 -m json.tool 2>/dev/null || echo "api not reachable"
 
 JOB ?=
 .PHONY: job
 job:  ## show one job.  make job JOB=<uuid>
 	@test -n "$(JOB)" || { echo "usage: make job JOB=<uuid>"; exit 1; }
-	@curl -fsS $(API)/v1/jobs/$(JOB) | python3 -m json.tool
+	@curl -fsS -H "X-API-Key: $(API_AUTH_TOKEN)" $(API)/v1/jobs/$(JOB) | python3 -m json.tool
 
 .PHONY: fixture
 fixture:  ## build a deliberately vulnerable test zip

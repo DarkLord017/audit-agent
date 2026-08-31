@@ -1,10 +1,12 @@
 """HTTP routes, grouped in a class."""
 
+import hmac
 import logging
+import os
 import uuid
 
 import psycopg
-from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 
 from backend.api.service import JobService
 
@@ -19,12 +21,37 @@ class JobsAPI:
     """
 
     def __init__(self, service: JobService | None = None):
+        token = os.getenv("API_AUTH_TOKEN")
+        if not token:
+            raise RuntimeError("API_AUTH_TOKEN is not set")
+        self.token = token
         self.service = service or JobService()
-        self.router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
+        self.router = APIRouter(
+            prefix="/v1/jobs",
+            tags=["jobs"],
+            dependencies=[Depends(self._require_auth)],
+        )
 
         self.router.add_api_route("/history", self.history, methods=["GET"])
         self.router.add_api_route("/start", self.start, methods=["POST"], status_code=201)
         self.router.add_api_route("/{job_id}", self.get, methods=["GET"])
+
+    def _require_auth(self, request: Request) -> None:
+        """Reject anyone who does not present API_AUTH_TOKEN.
+
+        The API is published on :1337. Without this, anyone who can reach
+        the port can start jobs (and spend the Anthropic key) or read
+        reports. Health stays on a different router and is not gated.
+        """
+        provided = (request.headers.get("x-api-key") or "").strip()
+        if not provided:
+            header = request.headers.get("authorization") or ""
+            if header.startswith("Bearer "):
+                provided = header.removeprefix("Bearer ").strip()
+        if not provided or not hmac.compare_digest(
+            provided.encode("utf-8"), self.token.encode("utf-8")
+        ):
+            raise HTTPException(status_code=401, detail="unauthorized")
 
     def history(
         self,
