@@ -36,14 +36,20 @@ missing). Do not edit their `Scarb.toml` to "fix" remappings; if it will
 not build as shipped, that is UNVERIFIED.
 
 Only if they shipped no `Scarb.toml` do you use `poc/`, which is
-scaffolded with `snforge_std` on a path and a bare `src/lib.cairo`. Copy
-the contracts you need from `unzipped/` into `poc/src/` (read-only on
-`unzipped/`) and declare them from tests.
+scaffolded with `snforge_std = "0.63.0"` (already in this image's
+`SCARB_CACHE`) and a bare `src/lib.cairo`. Copy the contracts you need
+from `unzipped/` into `poc/src/` (read-only on `unzipped/`) and declare
+them from tests.
 
-`snforge_std` for the fallback project lives at `$SNFORGE_STD_DIR`
-(default `/opt/snforge_std`). OpenZeppelin Cairo contracts are cloned at
-`/opt/cairo-contracts` for path deps if their code needs them and they
-did not vendor a copy.
+OpenZeppelin Cairo contracts are cloned at `/opt/cairo-contracts`
+(v4.0.1). Path-dep a package if their code needs OZ and they did not
+vendor a copy, for example:
+
+```
+openzeppelin_token = { path = "/opt/cairo-contracts/packages/token" }
+```
+
+If the import still will not resolve, mark UNVERIFIED.
 
 ## Failures you will actually hit
 
