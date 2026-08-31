@@ -45,7 +45,6 @@ RUN set -eux; \
       'solana-sdk = "1.18"' \
       'solana-program-test = "1.18"'; \
     fetch_graph \
-      '[dependencies]' \
       'spl-token = "4"' \
       'spl-associated-token-account = "3"'; \
     rm -rf /tmp/solana-vendor /tmp/tmp.* /tmp/solana_vendor_tmp* \

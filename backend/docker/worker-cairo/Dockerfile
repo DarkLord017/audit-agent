@@ -41,13 +41,36 @@ RUN git clone --depth 1 --branch v4.0.1 \
 
 # Warm the Scarb cache so `scarb --offline` works. snforge new writes a
 # Scarb.toml that matches this snforge version, including prebuilt plugins.
-RUN mkdir -p /opt/scarb-cache /tmp/cairo-vendor \
+# A second project matches the fallback scaffold in ecosystems/cairo.py.
+RUN mkdir -p /opt/scarb-cache /tmp/cairo-scaffold/src \
     && snforge new /tmp/cairo-vendor --name vendor --no-vcs \
-    && cd /tmp/cairo-vendor \
-    && scarb fetch \
-    && (cd /opt/cairo-contracts && scarb fetch) \
-    && chmod -R a+rX /opt/scarb-cache \
-    && rm -rf /tmp/cairo-vendor
+    && scarb --manifest-path /tmp/cairo-vendor/Scarb.toml fetch \
+    && printf '%s\n' \
+         '[package]' \
+         'name = "poc"' \
+         'version = "0.1.0"' \
+         'edition = "2024_07"' \
+         '' \
+         '[dependencies]' \
+         'starknet = ">=2.12.0"' \
+         '' \
+         '[dev-dependencies]' \
+         'snforge_std = "0.63.0"' \
+         '' \
+         '[[target.starknet-contract]]' \
+         'sierra = true' \
+         '' \
+         '[scripts]' \
+         'test = "snforge test"' \
+         '' \
+         '[tool.scarb]' \
+         'allow-prebuilt-plugins = ["snforge_std"]' \
+         > /tmp/cairo-scaffold/Scarb.toml \
+    && : > /tmp/cairo-scaffold/src/lib.cairo \
+    && scarb --manifest-path /tmp/cairo-scaffold/Scarb.toml fetch \
+    && scarb --manifest-path /opt/cairo-contracts/Scarb.toml fetch \
+    && chmod -R a+rwX /opt/scarb-cache \
+    && rm -rf /tmp/cairo-vendor /tmp/cairo-scaffold
 
 # Caracal is not installed: last prebuilt (v0.2.3) targets Cairo <= 2.5.0.
 
