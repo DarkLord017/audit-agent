@@ -1,7 +1,7 @@
 <!--
 Adapted from the cairo-vulnerability-scanner skill in trailofbits/skills,
 which is licensed CC-BY-SA-4.0. This directory is therefore also CC-BY-SA-4.0.
-See ../../../ATTRIBUTION.md.
+See ../../ATTRIBUTION.md.
 -->
 
 # Trail of Bits Cairo patterns (extra references)
@@ -22,4 +22,4 @@ storage layout, or L1–L2 messaging.
 | [l1-l2-messaging.md](l1-l2-messaging.md) | Address conversion, message failure, overconstrained bridges |
 | [signature-replay.md](signature-replay.md) | Missing nonce / domain separator |
 
-**Licence:** CC-BY-SA-4.0. See `../../../ATTRIBUTION.md`.
+**Licence:** CC-BY-SA-4.0. See [`../../ATTRIBUTION.md`](../../ATTRIBUTION.md).
