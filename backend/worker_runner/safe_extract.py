@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 MAX_FILES = 5_000
 MAX_TOTAL_BYTES = 200 * 1024 * 1024   # 200 MB uncompressed
 MAX_FILE_BYTES = 10 * 1024 * 1024     # 10 MB per file
+_CHUNK = 64 * 1024
 
 SKIP_DIRS = {".claude", ".git", ".github", ".cursor", "node_modules"}
 SKIP_FILES = {
@@ -41,7 +42,44 @@ def _should_skip(name: str) -> bool:
     return path.name in SKIP_FILES
 
 
-def safe_extract(zip_path: Path, dest: Path) -> int:
+def _copy_capped(
+    src,
+    out,
+    *,
+    name: str,
+    max_file_bytes: int,
+    max_total_bytes: int,
+    running_total: int,
+) -> int:
+    """Stream src → out. Return the new running total of bytes written.
+
+    Caps are enforced on bytes actually copied, not ZipInfo.file_size.
+    The overflowing chunk is not written.
+    """
+    file_bytes = 0
+    while True:
+        chunk = src.read(_CHUNK)
+        if not chunk:
+            break
+        n = len(chunk)
+        file_bytes += n
+        if file_bytes > max_file_bytes:
+            raise UnsafeZip(f"file too large: {name}")
+        running_total += n
+        if running_total > max_total_bytes:
+            raise UnsafeZip(f"uncompressed size too large: {running_total} bytes")
+        out.write(chunk)
+    return running_total
+
+
+def safe_extract(
+    zip_path: Path,
+    dest: Path,
+    *,
+    max_files: int = MAX_FILES,
+    max_file_bytes: int = MAX_FILE_BYTES,
+    max_total_bytes: int = MAX_TOTAL_BYTES,
+) -> int:
     """Extract zip_path into dest. Returns the number of files written.
 
     Raises UnsafeZip if the archive is hostile.
@@ -56,17 +94,17 @@ def safe_extract(zip_path: Path, dest: Path) -> int:
         #
         # Two passes, because checking and writing in one loop leaves a
         # half-extracted hostile archive on disk when you abort.
-        if len(infos) > MAX_FILES:
+        if len(infos) > max_files:
             raise UnsafeZip(f"too many entries: {len(infos)}")
 
         total = sum(i.file_size for i in infos)
-        if total > MAX_TOTAL_BYTES:
+        if total > max_total_bytes:
             raise UnsafeZip(f"uncompressed size too large: {total} bytes")
 
         for info in infos:
             name = info.filename
 
-            if info.file_size > MAX_FILE_BYTES:
+            if info.file_size > max_file_bytes:
                 raise UnsafeZip(f"file too large: {name}")
 
             # A symlink pointing at / lets later entries write through it.
@@ -85,6 +123,7 @@ def safe_extract(zip_path: Path, dest: Path) -> int:
 
         # --- pass 2: safe, so write ---
         written = skipped = 0
+        running_total = 0
         for info in infos:
             if info.is_dir():
                 continue
@@ -94,8 +133,19 @@ def safe_extract(zip_path: Path, dest: Path) -> int:
 
             target = (dest / info.filename).resolve()
             target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info) as src, target.open("wb") as out:
-                out.write(src.read())
+            try:
+                with zf.open(info) as src, target.open("wb") as out:
+                    running_total = _copy_capped(
+                        src,
+                        out,
+                        name=info.filename,
+                        max_file_bytes=max_file_bytes,
+                        max_total_bytes=max_total_bytes,
+                        running_total=running_total,
+                    )
+            except UnsafeZip:
+                target.unlink(missing_ok=True)
+                raise
             written += 1
 
     log.info("extracted %d files into %s (%d skipped)", written, dest, skipped)
