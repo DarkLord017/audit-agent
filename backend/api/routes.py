@@ -7,6 +7,7 @@ import psycopg
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 
 from backend.api.service import JobService
+from backend.utils.utils import JobHistoryResponse, JobResponse
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +23,13 @@ class JobsAPI:
         self.service = service or JobService()
         self.router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 
-        self.router.add_api_route("/history", self.history, methods=["GET"])
+        self.router.add_api_route(
+            "/history", self.history, methods=["GET"], response_model=JobHistoryResponse
+        )
         self.router.add_api_route("/start", self.start, methods=["POST"], status_code=201)
-        self.router.add_api_route("/{job_id}", self.get, methods=["GET"])
+        self.router.add_api_route(
+            "/{job_id}", self.get, methods=["GET"], response_model=JobResponse
+        )
 
     def history(
         self,
@@ -37,7 +42,8 @@ class JobsAPI:
             log.exception("history query failed")
             raise HTTPException(status_code=503, detail="database unavailable") from None
         # An empty list is a valid answer, not an error.
-        return {"jobs": jobs, "limit": limit, "offset": offset, "count": len(jobs)}
+        public = [JobResponse.from_job(job) for job in jobs]
+        return {"jobs": public, "limit": limit, "offset": offset, "count": len(public)}
 
     def get(self, job_id: uuid.UUID):
         try:
@@ -48,7 +54,7 @@ class JobsAPI:
 
         if job is None:
             raise HTTPException(status_code=404, detail=f"no job with id {job_id}")
-        return job
+        return JobResponse.from_job(job)
 
     async def start(
         self,
