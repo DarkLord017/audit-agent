@@ -45,6 +45,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-evmbench}:${RABBITMQ_PASSWORD:-evmbench}@rabbitmq:5672/%2F
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
       PROXY_SECRET_KEY: ${PROXY_SECRET_KEY:?run 'make secret' and put it in .env}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:?set API_AUTH_TOKEN in .env}
       UPLOAD_DIR: ${PWD}/uploads
     volumes:
       - ${PWD}/uploads:${PWD}/uploads
