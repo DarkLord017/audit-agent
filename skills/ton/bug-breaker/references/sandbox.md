@@ -45,11 +45,12 @@ compiler accepts a single input; otherwise mark UNVERIFIED.
 Sandbox tests (Jest + ts-jest, already in `$TON_SANDBOX_DIR`):
 
 ```
-cd poc && jest tests/fakeNotify.spec.ts --offline=false
+cd poc && jest tests/fakeNotify.spec.ts
 ```
 
-Jest has no package-offline mode; **npm** is what must stay offline.
-`NODE_PATH` is enough. From their Blueprint tree:
+Jest has no package-offline mode; **npm** is what must stay offline
+(`npm_config_offline=true` is set in the image). `NODE_PATH` is enough.
+From their Blueprint tree:
 
 ```
 cd unzipped && blueprint test -- tests/fakeNotify.spec.ts

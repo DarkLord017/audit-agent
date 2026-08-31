@@ -104,6 +104,8 @@ ENV GOPROXY=off \
     CGO_ENABLED=1 \
     CARGO_NET_OFFLINE=true \
     CARGO_TARGET_DIR=/tmp/target \
+    CARGO_INCREMENTAL=0 \
+    CARGO_PROFILE_DEV_DEBUG=0 \
     GOCACHE=/tmp/gocache
 
 RUN uv pip install --system --no-cache \

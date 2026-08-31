@@ -45,10 +45,9 @@ cosmwasm-std = { version = "2.2", features = ["std"] }
 
 If the upload has its own `go.mod` or `Cargo.toml`, **use it**. It carries
 their SDK / `cosmwasm-std` version, replace directives, workspace members
-and features, and nothing else will compile their code. Work inside their
-project and add your tests next to theirs (a new `*_test.go` or a new
-`#[cfg(test)]` module). Prefer writing tests under `{poc}/` with a module
-`replace` / path dependency so you never have to edit their tree.
+and features, and nothing else will compile their code. Depend on their
+package from `{poc}/` via a Go `replace` or a Cargo path dependency.
+**Never modify `{source}/`.**
 
 There is no network. Two rules on every command:
 
