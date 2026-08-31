@@ -31,7 +31,14 @@ pythonpath = .
 \"\"\"Titanoboa loads .vy files from unzipped/. Never modify unzipped/.\"\"\"
 from pathlib import Path
 
+import pytest
+
 UNZIPPED = Path(__file__).resolve().parents[1] / "unzipped"
+
+
+@pytest.fixture
+def unzipped() -> Path:
+    return UNZIPPED
 """,
         ),
     ),
@@ -44,15 +51,15 @@ else will load their contracts the way they expect. Work inside their
 project and add your tests next to theirs.
 
 There is no network. Titanoboa and `vyper` are already in this image.
-Run tests in-process:
+Run tests in-process from the project directory:
 
 ```
 pytest tests/test_foo.py -vv
 ```
 
 If the upload has no pytest project, use `{poc}/`, where `conftest.py`
-exposes `UNZIPPED` pointing at `{source}/`. Load contracts with
-`boa.load(str(UNZIPPED / "Whatever.vy"))`.
+exposes `UNZIPPED` (and an `unzipped` fixture) pointing at `{source}/`.
+Load contracts with `boa.load(str(UNZIPPED / "Whatever.vy"))`.
 
 `/work` is a 1g tmpfs. Titanoboa is an in-process interpreter — keep
 PoCs small and do not try to fork a live chain (there is no RPC).
