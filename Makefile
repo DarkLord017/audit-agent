@@ -41,7 +41,7 @@ build: build-base build-worker build-backend  ## build every image
 build-base:  ## neutral base, amd64 (python, node, claude-code)
 	docker build --platform $(PLATFORM) -t evmbench/base:latest -f backend/docker/base/Dockerfile .
 
-# One image per backend/docker/worker-<name>/Dockerfile → evmbench/worker-<name>:latest
+# One image per backend/docker/worker-<name>/Dockerfile -> evmbench/worker-<name>:latest
 WORKER_DOCKERFILES := $(wildcard backend/docker/worker-*/Dockerfile)
 WORKER_NAMES       := $(patsubst backend/docker/worker-%/Dockerfile,%,$(WORKER_DOCKERFILES))
 WORKER_TARGETS     := $(addprefix build-worker-,$(WORKER_NAMES))
